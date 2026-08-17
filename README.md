@@ -67,6 +67,49 @@ Note this adds a real delay before the game window appears — Steam won't
 show a console window, so update output isn't visible unless you run the
 `.bat` yourself from a terminal.
 
+## Updating Desktop / Start Menu shortcuts
+
+Existing shortcuts (Desktop, Start Menu, taskbar) launch `factorio.exe` or
+Steam directly, so they skip the update pass entirely unless you repoint
+them at this script.
+
+**Shortcut launches `factorio.exe` directly** (standalone installs, or a
+manually created shortcut):
+
+1. Right-click the shortcut → **Properties** → **Shortcut** tab.
+2. Replace the **Target** field with:
+   ```
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\path\to\factorio-preload-updater\Update-FactorioMods.ps1"
+   ```
+   (use the actual path to where you cloned this repo).
+3. The icon will change to the generic PowerShell icon. To restore the
+   Factorio icon, click **Change Icon...**, browse to the real
+   `factorio.exe` (e.g. `...\Factorio\bin\x64\factorio.exe`), and pick it.
+4. Click **OK**.
+
+**Shortcut launches Steam** (e.g. a Steam-created shortcut pointing at
+`steam://rungameid/427520`): don't repoint these — use the [Steam Launch
+Options wrapper](#running-automatically-when-you-press-play-in-steam)
+instead. Once that's set up, Steam's own Play button (and any shortcut that
+goes through it) already runs the update pass, so there's nothing to change
+here.
+
+**Automated option:** rather than editing shortcuts by hand, run:
+
+```powershell
+.\Update-FactorioShortcuts.ps1
+```
+
+This scans your Desktop and Start Menu (both your own and, if writable, the
+all-users locations) and repoints any `.lnk` shortcut targeting
+`factorio.exe` directly at the updater script, keeping the original
+Factorio icon. Steam `.url` shortcuts are left alone, for the reason above.
+
+Every shortcut it touches is backed up alongside itself as a `.bak` file
+first — nothing is deleted outright, so you can restore the original by
+renaming the `.bak` back. Add `-WhatIf` to preview the changes without
+making them.
+
 ## Configuration
 
 A `config.json` is created next to the script on first run, with these
