@@ -9,7 +9,7 @@ then launches Factorio (Steam or standalone).
 - Windows with PowerShell 5.1+ (built in) or PowerShell 7.
 - You must have logged into the Mod Portal at least once from Factorio's
   in-game "Mods" browser, so `player-data.json` has saved credentials. The
-  script reuses those — it never asks for or stores a password itself.
+  script reuses those, it never asks for or stores a password itself.
 
 ## Usage
 
@@ -63,9 +63,9 @@ To wire it up:
 3. Close the dialog. Pressing **Play** now runs the mod update pass first,
    then launches Factorio as normal.
 
-Note this adds a real delay before the game window appears — Steam won't
-show a console window, so update output isn't visible unless you run the
-`.bat` yourself from a terminal.
+A console window is shown while the update check runs. If there are no mod
+updates, this only adds about a second before the game window appears;
+actual downloads take longer, depending on mod size and connection speed.
 
 **Automated option:** rather than typing the Launch Options in by hand, run:
 
@@ -76,19 +76,23 @@ show a console window, so update output isn't visible unless you run the
 This edits Steam's own `localconfig.vdf` directly to set Factorio's Launch
 Options to the wrapper string above. Steam keeps an in-memory copy of this
 file while running and will silently overwrite an external edit, so the
-script requires Steam to be fully closed first — if it's still running, the
+script requires Steam to be fully closed first. If it's still running, the
 script tells you to quit it and waits until it actually closes before making
 any change. The file is backed up alongside itself as `localconfig.vdf.bak`
 first. Add `-WhatIf` to preview the change without making it.
 
 ## Updating Desktop / Start Menu shortcuts
 
-Existing shortcuts (Desktop, Start Menu, taskbar) launch `factorio.exe` or
-Steam directly, so they skip the update pass entirely unless you repoint
-them at this script.
+If you're using Steam and have the [Launch Options
+wrapper](#running-automatically-when-you-press-play-in-steam) set up, this
+section shouldn't be necessary. Steam runs the wrapper for any launch that
+goes through Steam, whether that's the Play button or a shortcut pointing at
+`steam://rungameid/427520`, so those shortcuts already trigger the update
+pass without being changed.
 
-**Shortcut launches `factorio.exe` directly** (standalone installs, or a
-manually created shortcut):
+This section only applies to shortcuts that launch `factorio.exe` directly,
+bypassing Steam entirely (standalone installs, or a manually created
+shortcut):
 
 1. Right-click the shortcut → **Properties** → **Shortcut** tab.
 2. Replace the **Target** field with:
@@ -101,13 +105,6 @@ manually created shortcut):
    `factorio.exe` (e.g. `...\Factorio\bin\x64\factorio.exe`), and pick it.
 4. Click **OK**.
 
-**Shortcut launches Steam** (e.g. a Steam-created shortcut pointing at
-`steam://rungameid/427520`): don't repoint these — use the [Steam Launch
-Options wrapper](#running-automatically-when-you-press-play-in-steam)
-instead. Once that's set up, Steam's own Play button (and any shortcut that
-goes through it) already runs the update pass, so there's nothing to change
-here.
-
 **Automated option:** rather than editing shortcuts by hand, run:
 
 ```powershell
@@ -117,10 +114,11 @@ here.
 This scans your Desktop and Start Menu (both your own and, if writable, the
 all-users locations) and repoints any `.lnk` shortcut targeting
 `factorio.exe` directly at the updater script, keeping the original
-Factorio icon. Steam `.url` shortcuts are left alone, for the reason above.
+Factorio icon. Steam `.url` shortcuts are left alone, since they go through
+Steam and already work as described above.
 
 Every shortcut it touches is backed up alongside itself as a `.bak` file
-first — nothing is deleted outright, so you can restore the original by
+first. Nothing is deleted outright, so you can restore the original by
 renaming the `.bak` back. Add `-WhatIf` to preview the changes without
 making them.
 
@@ -138,10 +136,10 @@ defaults:
 }
 ```
 
-- `ModsPath` / `FactorioExePath` — set these if auto-detection picks the
+- `ModsPath` / `FactorioExePath`: set these if auto-detection picks the
   wrong install (e.g. multiple Factorio copies, a non-standard Steam
   library, or a custom `--mod-directory`). `null` means auto-detect.
-- `LaunchMode` — `SteamProtocol` (default, launches via `steam://rungameid`),
+- `LaunchMode`: `SteamProtocol` (default, launches via `steam://rungameid`),
   `SteamExe` or `Standalone` (launch the resolved `factorio.exe` directly).
   Direct-exe launching is used automatically instead of `SteamProtocol`
   whenever you pass extra arguments, since the `steam://` protocol can't
@@ -155,11 +153,11 @@ defaults:
   an exact match caused real updates to be missed.
 - Downloaded zips are verified against the Mod Portal's published SHA1
   before being kept.
-- Old mod zip versions are **left in place** — Factorio itself keeps
+- Old mod zip versions are **left in place**. Factorio itself keeps
   multiple versions of a mod around (for save compatibility), so this
   script only ever adds a new zip, never deletes or unpacks one.
 - Unpacked/dev mod folders (a folder with `info.json` instead of a zip)
   are never touched, only reported as skipped.
 - If credentials are missing, the mod portal is unreachable, or the
   installed game version can't be determined, the update pass is skipped
-  with a warning — Factorio still launches.
+  with a warning. Factorio still launches.
