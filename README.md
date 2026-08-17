@@ -41,6 +41,32 @@ Forward extra arguments to Factorio itself (e.g. to join a server or load a save
 .\Update-FactorioMods.ps1 -mp-connect 1.2.3.4
 ```
 
+## Running automatically when you press Play in Steam
+
+Steam's per-game "Launch Options" support a `%command%` placeholder: whatever
+you put before it runs first, and `%command%` expands to Steam's own launch
+command for the game (the real `factorio.exe` plus any args Steam adds), so
+your wrapper stays in control while Steam still does the actual launch.
+
+`Launch-Wrapper.bat` (included here) does exactly that: it runs the updater
+with `-NoLaunch`, then executes `%*` (the command Steam passed it) to start
+the real game.
+
+To wire it up:
+
+1. In Steam, right-click **Factorio** → **Properties** → **General**.
+2. In **Launch Options**, enter:
+   ```
+   "C:\path\to\factorio-preload-updater\Launch-Wrapper.bat" %command%
+   ```
+   (use the actual path to where you cloned this repo).
+3. Close the dialog. Pressing **Play** now runs the mod update pass first,
+   then launches Factorio as normal.
+
+Note this adds a real delay before the game window appears — Steam won't
+show a console window, so update output isn't visible unless you run the
+`.bat` yourself from a terminal.
+
 ## Configuration
 
 A `config.json` is created next to the script on first run, with these
