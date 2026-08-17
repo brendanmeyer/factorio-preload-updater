@@ -1,4 +1,6 @@
 <#
+Version: 1.0.0
+
 Finds Desktop, Start Menu, and taskbar shortcuts that launch factorio.exe
 directly and repoints them at Update-FactorioMods.ps1, so launching from any
 of them also runs the mod-update pass first. Nothing is deleted outright -

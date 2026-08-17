@@ -1,4 +1,6 @@
 <#
+Version: 1.0.0
+
 Sets Factorio's Steam "Launch Options" (the %command% wrapper) directly in
 Steam's own config file, instead of typing it in by hand.
 

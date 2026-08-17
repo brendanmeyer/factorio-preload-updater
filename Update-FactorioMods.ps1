@@ -1,5 +1,7 @@
 #Requires -Version 5.1
 <#
+Version: 1.0.0
+
 Checks installed Factorio mods against the Mod Portal, downloads any updates
 using the credentials Factorio already saved after an in-game login, then
 launches Factorio (Steam or standalone).
