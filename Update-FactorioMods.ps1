@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Version: 1.0.0
+Version: 1.0.0.1
 
 Checks installed Factorio mods against the Mod Portal, downloads any updates
 using the credentials Factorio already saved after an in-game login, then
@@ -374,14 +374,26 @@ function Update-ModsInParallel {
             [void]$ps.AddScript($UpdateModScriptBlock).
                 AddArgument($ModsPath).AddArgument($item.Name).AddArgument($item.Release).
                 AddArgument($Username).AddArgument($Token)
-            $running.Add([PSCustomObject]@{ PS = $ps; Handle = $ps.BeginInvoke() })
+            $running.Add([PSCustomObject]@{ PS = $ps; Handle = $ps.BeginInvoke(); Done = $false })
         }
 
+        $total = $running.Count
+        $completed = 0
         $results = [System.Collections.Generic.List[object]]::new()
-        foreach ($job in $running) {
-            $results.AddRange([object[]]$job.PS.EndInvoke($job.Handle))
-            $job.PS.Dispose()
+        Write-Progress -Activity 'Downloading mod updates' -Status "0 of $total" -PercentComplete 0
+        while ($completed -lt $total) {
+            foreach ($job in $running) {
+                if (-not $job.Done -and $job.Handle.IsCompleted) {
+                    $results.AddRange([object[]]$job.PS.EndInvoke($job.Handle))
+                    $job.PS.Dispose()
+                    $job.Done = $true
+                    $completed++
+                    Write-Progress -Activity 'Downloading mod updates' -Status "$completed of $total" -PercentComplete ([int](100 * $completed / $total))
+                }
+            }
+            if ($completed -lt $total) { Start-Sleep -Milliseconds 100 }
         }
+        Write-Progress -Activity 'Downloading mod updates' -Completed
         return $results
     } finally {
         $pool.Close()
