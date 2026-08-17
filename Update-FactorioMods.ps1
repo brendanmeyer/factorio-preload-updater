@@ -8,6 +8,7 @@ launches Factorio (Steam or standalone).
 [CmdletBinding()]
 param(
     [switch]$SkipModUpdate,
+    [switch]$NoLaunch,
     [switch]$DryRun,
     [string]$ConfigPath,
 
@@ -433,6 +434,11 @@ if (-not $SkipModUpdate) {
 
 if ($DryRun) {
     Write-Host "Dry run complete - not launching Factorio."
+    exit 0
+}
+
+if ($NoLaunch) {
+    Write-Host "Done - not launching Factorio (-NoLaunch)."
     exit 0
 }
 

@@ -29,6 +29,12 @@ Skip the mod-update pass and just launch:
 .\Update-FactorioMods.ps1 -SkipModUpdate
 ```
 
+Download updates but don't launch Factorio:
+
+```powershell
+.\Update-FactorioMods.ps1 -NoLaunch
+```
+
 Forward extra arguments to Factorio itself (e.g. to join a server or load a save):
 
 ```powershell
