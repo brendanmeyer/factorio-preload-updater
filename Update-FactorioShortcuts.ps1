@@ -1,7 +1,7 @@
 <#
-Finds Desktop and Start Menu shortcuts that launch factorio.exe directly and
-repoints them at Update-FactorioMods.ps1, so double-clicking an existing
-shortcut also runs the mod-update pass first. Nothing is deleted outright -
+Finds Desktop, Start Menu, and taskbar shortcuts that launch factorio.exe
+directly and repoints them at Update-FactorioMods.ps1, so launching from any
+of them also runs the mod-update pass first. Nothing is deleted outright -
 every changed shortcut is backed up alongside itself as a .bak file.
 
 Steam-launched (.url, steam://rungameid/...) shortcuts are left alone: once
@@ -26,11 +26,14 @@ $updaterArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$UpdaterScriptPath`""
 # All-users (Common*) locations are included but silently skipped per-shortcut
 # if they're not writable (e.g. the script isn't running elevated) - readable
 # without admin rights, so we can still find them and just warn on write failure.
+# Classic (Win32) taskbar pins are backed by .lnk files in this same
+# "User Pinned\TaskBar" folder, same as Start Menu/Desktop shortcuts.
 $candidateFolders = @(
     [Environment]::GetFolderPath('Desktop')
     [Environment]::GetFolderPath('CommonDesktopDirectory')
     [Environment]::GetFolderPath('Programs')
     [Environment]::GetFolderPath('CommonPrograms')
+    (Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar')
 ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
 
 $shell = New-Object -ComObject WScript.Shell
@@ -71,7 +74,7 @@ foreach ($folder in $candidateFolders) {
 }
 
 if ($changed -eq 0) {
-    Write-Host 'No Factorio Desktop/Start Menu shortcuts needed updating.'
+    Write-Host 'No Factorio Desktop/Start Menu/taskbar shortcuts needed updating.'
 } else {
     Write-Host "Done - $changed shortcut(s) updated. Originals are kept alongside as .bak files."
 }
