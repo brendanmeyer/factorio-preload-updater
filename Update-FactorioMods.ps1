@@ -318,18 +318,12 @@ function Get-LatestReleases {
     return $latestByName
 }
 
-# Downloads one mod release and adds it to the mods folder. The existing
-# zip(s) for this mod are deliberately left in place - Factorio keeps old
-# versions around itself, and other saves/mod-list entries may still pin an
-# older version.
-function Update-Mod {
-    param(
-        [string]$ModsPath,
-        [string]$ModName,
-        $Release,
-        [string]$Username,
-        [string]$Token
-    )
+# Downloads one release and adds it to the mods folder - the actual work
+# done inside each parallel runspace below. The existing zip(s) for this mod
+# are deliberately left in place - Factorio keeps old versions around
+# itself, and other saves/mod-list entries may still pin an older version.
+$UpdateModScriptBlock = {
+    param($ModsPath, $ModName, $Release, $Username, $Token)
 
     # Appending username/token as query params is how the portal
     # authenticates downloads - see https://wiki.factorio.com/Mod_portal_API.
@@ -339,22 +333,60 @@ function Update-Mod {
     try {
         Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing -TimeoutSec 60
     } catch {
-        Write-Warning "  Download failed for '$ModName': $($_.Exception.Message)"
         Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
-        return $false
+        return [PSCustomObject]@{ ModName = $ModName; Success = $false; Error = "Download failed: $($_.Exception.Message)" }
     }
 
     # Verify integrity before it ever touches the real mods folder.
     $actualHash = (Get-FileHash -LiteralPath $tempFile -Algorithm SHA1).Hash
     if (-not ($actualHash -ieq $Release.sha1)) {
-        Write-Warning "  SHA1 mismatch for '$ModName' - keeping existing version."
         Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
-        return $false
+        return [PSCustomObject]@{ ModName = $ModName; Success = $false; Error = 'SHA1 mismatch - keeping existing version.' }
     }
 
     $newZipPath = Join-Path $ModsPath $Release.file_name
     Move-Item -LiteralPath $tempFile -Destination $newZipPath -Force
-    return $true
+    return [PSCustomObject]@{ ModName = $ModName; Success = $true; Version = $Release.version }
+}
+
+# Downloads are network-bound (mostly waiting on the mod portal, not on CPU),
+# so running several at once cuts total wait time a lot for the common case
+# of multiple mods updating together. Uses a runspace pool rather than
+# Start-Job or ForEach-Object -Parallel so this works unchanged on both
+# Windows PowerShell 5.1 and PowerShell 7, with no extra modules.
+function Update-ModsInParallel {
+    param(
+        [string]$ModsPath,
+        [System.Collections.Generic.List[object]]$Updates,
+        [string]$Username,
+        [string]$Token,
+        [int]$MaxConcurrency = 5
+    )
+
+    $pool = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspacePool(1, $MaxConcurrency)
+    $pool.Open()
+
+    $running = [System.Collections.Generic.List[object]]::new()
+    try {
+        foreach ($item in $Updates) {
+            $ps = [System.Management.Automation.PowerShell]::Create()
+            $ps.RunspacePool = $pool
+            [void]$ps.AddScript($UpdateModScriptBlock).
+                AddArgument($ModsPath).AddArgument($item.Name).AddArgument($item.Release).
+                AddArgument($Username).AddArgument($Token)
+            $running.Add([PSCustomObject]@{ PS = $ps; Handle = $ps.BeginInvoke() })
+        }
+
+        $results = [System.Collections.Generic.List[object]]::new()
+        foreach ($job in $running) {
+            $results.AddRange([object[]]$job.PS.EndInvoke($job.Handle))
+            $job.PS.Dispose()
+        }
+        return $results
+    } finally {
+        $pool.Close()
+        $pool.Dispose()
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -431,6 +463,10 @@ if (-not $SkipModUpdate) {
 
         $latestReleases = Get-LatestReleases -ModNames ($mods.Mods | ForEach-Object { $_.Name })
 
+        # First pass just decides what needs downloading, so all the
+        # downloads themselves can run together afterward instead of one at
+        # a time.
+        $toUpdate = [System.Collections.Generic.List[object]]::new()
         foreach ($mod in $mods.Mods) {
             Write-Host "Checking '$($mod.Name)' ($($mod.LatestVersion) installed)..."
             $release = $latestReleases[$mod.Name]
@@ -450,8 +486,18 @@ if (-not $SkipModUpdate) {
                 continue
             }
 
-            if (Update-Mod -ModsPath $modsPath -ModName $mod.Name -Release $release -Username $creds.Username -Token $creds.Token) {
-                Write-Host "  Downloaded $($release.version) (previous version(s) left in place)."
+            $toUpdate.Add([PSCustomObject]@{ Name = $mod.Name; Release = $release })
+        }
+
+        if ($toUpdate.Count -gt 0) {
+            Write-Host "Downloading $($toUpdate.Count) mod update(s)..."
+            $results = Update-ModsInParallel -ModsPath $modsPath -Updates $toUpdate -Username $creds.Username -Token $creds.Token
+            foreach ($result in $results) {
+                if ($result.Success) {
+                    Write-Host "  Downloaded '$($result.ModName)' $($result.Version) (previous version(s) left in place)."
+                } else {
+                    Write-Warning "  '$($result.ModName)': $($result.Error)"
+                }
             }
         }
     }
