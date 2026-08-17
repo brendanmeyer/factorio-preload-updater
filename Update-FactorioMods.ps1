@@ -276,23 +276,44 @@ function Get-InstalledMods {
 # Mod portal lookup + update
 # ---------------------------------------------------------------------------
 
-# Just take the highest-versioned release on the portal, regardless of its
+# Looks up the latest release for every given mod name using the portal's
+# batch list endpoint (GET /api/mods?namelist=...) instead of one request per
+# mod - collapses dozens of separate connections (and just as many chances
+# for a single one to stall) into a couple of batched calls. Chunked to keep
+# the query string well short of typical server URL-length limits even with
+# a very large mod list. A short per-request timeout means one bad
+# connection can no longer stall the whole check for a long time.
+#
+# Just takes the highest-versioned release on the portal, regardless of its
 # declared factorio_version - mods are generally usable across nearby game
 # versions, and requiring an exact major.minor match caused real updates to
 # be missed for mods whose author hadn't re-tagged for the newest game version yet.
-function Get-LatestRelease {
-    param([string]$ModName)
+function Get-LatestReleases {
+    param([string[]]$ModNames)
 
-    try {
-        $mod = Invoke-RestMethod -Uri "https://mods.factorio.com/api/mods/$ModName" -Method Get
-    } catch {
-        Write-Warning "  Could not look up '$ModName' on the mod portal: $($_.Exception.Message)"
-        return $null
+    $latestByName = @{}
+    if (-not $ModNames -or $ModNames.Count -eq 0) { return $latestByName }
+
+    $batchSize = 50
+    for ($i = 0; $i -lt $ModNames.Count; $i += $batchSize) {
+        $batch = $ModNames[$i..([Math]::Min($i + $batchSize, $ModNames.Count) - 1)]
+        $namelistParam = ($batch | ForEach-Object { "namelist=$([uri]::EscapeDataString($_))" }) -join '&'
+        $url = "https://mods.factorio.com/api/mods?page_size=max&$namelistParam"
+
+        try {
+            $resp = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 15
+        } catch {
+            Write-Warning "  Could not look up mods on the mod portal: $($_.Exception.Message)"
+            continue
+        }
+
+        foreach ($mod in $resp.results) {
+            if (-not $mod.releases) { continue }
+            $latestByName[$mod.name] = $mod.releases | Sort-Object { [version]$_.version } -Descending | Select-Object -First 1
+        }
     }
 
-    if (-not $mod.releases) { return $null }
-
-    return $mod.releases | Sort-Object { [version]$_.version } -Descending | Select-Object -First 1
+    return $latestByName
 }
 
 # Downloads one mod release and adds it to the mods folder. The existing
@@ -314,7 +335,7 @@ function Update-Mod {
     $tempFile = Join-Path ([System.IO.Path]::GetTempPath()) "$([guid]::NewGuid()).zip"
 
     try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $tempFile -UseBasicParsing -TimeoutSec 60
     } catch {
         Write-Warning "  Download failed for '$ModName': $($_.Exception.Message)"
         Remove-Item -LiteralPath $tempFile -ErrorAction SilentlyContinue
@@ -406,9 +427,11 @@ if (-not $SkipModUpdate) {
             Write-Host "Skipped '$unpacked': unpacked/dev mod, not auto-updated."
         }
 
+        $latestReleases = Get-LatestReleases -ModNames ($mods.Mods | ForEach-Object { $_.Name })
+
         foreach ($mod in $mods.Mods) {
             Write-Host "Checking '$($mod.Name)' ($($mod.LatestVersion) installed)..."
-            $release = Get-LatestRelease -ModName $mod.Name
+            $release = $latestReleases[$mod.Name]
             if (-not $release) {
                 Write-Host "  Not found on the mod portal."
                 continue
