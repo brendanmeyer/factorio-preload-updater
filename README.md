@@ -67,6 +67,20 @@ Note this adds a real delay before the game window appears — Steam won't
 show a console window, so update output isn't visible unless you run the
 `.bat` yourself from a terminal.
 
+**Automated option:** rather than typing the Launch Options in by hand, run:
+
+```powershell
+.\Set-FactorioSteamLaunchOptions.ps1
+```
+
+This edits Steam's own `localconfig.vdf` directly to set Factorio's Launch
+Options to the wrapper string above. Steam keeps an in-memory copy of this
+file while running and will silently overwrite an external edit, so the
+script requires Steam to be fully closed first — if it's still running, the
+script tells you to quit it and waits until it actually closes before making
+any change. The file is backed up alongside itself as `localconfig.vdf.bak`
+first. Add `-WhatIf` to preview the change without making it.
+
 ## Updating Desktop / Start Menu shortcuts
 
 Existing shortcuts (Desktop, Start Menu, taskbar) launch `factorio.exe` or
