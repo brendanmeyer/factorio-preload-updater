@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Version: 1.0.0.1
+Version: 1.0.0.2
 
 Checks installed Factorio mods against the Mod Portal, downloads any updates
 using the credentials Factorio already saved after an in-game login, then
@@ -40,10 +40,11 @@ function Get-ScriptConfig {
     param([string]$Path)
 
     $defaults = [ordered]@{
-        ModsPath        = $null              # null = auto-detect %APPDATA%\Factorio\mods
-        FactorioExePath = $null              # null = auto-detect (Steam, then standalone)
-        LaunchMode      = 'SteamProtocol'    # SteamProtocol | SteamExe | Standalone
-        SteamAppId      = '427520'           # Factorio's Steam app id
+        ModsPath              = $null              # null = auto-detect %APPDATA%\Factorio\mods
+        FactorioExePath       = $null              # null = auto-detect (Steam, then standalone)
+        LaunchMode            = 'SteamProtocol'    # SteamProtocol | SteamExe | Standalone
+        SteamAppId            = '427520'           # Factorio's Steam app id
+        OnlyUpdateEnabledMods = $false             # $false = update every installed mod (default)
     }
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -274,6 +275,25 @@ function Get-InstalledMods {
     return [PSCustomObject]@{ Mods = $byName.Values; Unpacked = $unpacked }
 }
 
+# Factorio tracks per-mod enabled/disabled state in mod-list.json, next to
+# the mods themselves. A mod with no entry there is treated as enabled (that
+# mirrors Factorio's own behavior for a mod it hasn't seen yet), so this only
+# needs to report which mods are explicitly disabled.
+function Get-DisabledModNames {
+    param([string]$ModsPath)
+
+    $disabled = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    $modListPath = Join-Path $ModsPath 'mod-list.json'
+    if (-not (Test-Path -LiteralPath $modListPath)) { return $disabled }
+
+    $modList = Get-Content -LiteralPath $modListPath -Raw | ConvertFrom-Json
+    foreach ($entry in $modList.mods) {
+        if ($entry.enabled -eq $false) { [void]$disabled.Add($entry.name) }
+    }
+    return $disabled
+}
+
 # ---------------------------------------------------------------------------
 # Mod portal lookup + update
 # ---------------------------------------------------------------------------
@@ -473,13 +493,25 @@ if (-not $SkipModUpdate) {
             Write-Host "Skipped '$unpacked': unpacked/dev mod, not auto-updated."
         }
 
-        $latestReleases = Get-LatestReleases -ModNames ($mods.Mods | ForEach-Object { $_.Name })
+        $modsToCheck = $mods.Mods
+        if ($config.OnlyUpdateEnabledMods) {
+            $disabledMods = Get-DisabledModNames -ModsPath $modsPath
+            $modsToCheck = @($mods.Mods | Where-Object {
+                if ($disabledMods.Contains($_.Name)) {
+                    Write-Host "Skipped '$($_.Name)': disabled in mod-list.json."
+                    return $false
+                }
+                return $true
+            })
+        }
+
+        $latestReleases = Get-LatestReleases -ModNames ($modsToCheck | ForEach-Object { $_.Name })
 
         # First pass just decides what needs downloading, so all the
         # downloads themselves can run together afterward instead of one at
         # a time.
         $toUpdate = [System.Collections.Generic.List[object]]::new()
-        foreach ($mod in $mods.Mods) {
+        foreach ($mod in $modsToCheck) {
             Write-Host "Checking '$($mod.Name)' ($($mod.LatestVersion) installed)..."
             $release = $latestReleases[$mod.Name]
             if (-not $release) {

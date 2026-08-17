@@ -2,5 +2,6 @@
     "ModsPath":  null,
     "FactorioExePath":  null,
     "LaunchMode":  "SteamProtocol",
-    "SteamAppId":  "427520"
+    "SteamAppId":  "427520",
+    "OnlyUpdateEnabledMods":  false
 }

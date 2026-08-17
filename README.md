@@ -132,7 +132,8 @@ defaults:
   "ModsPath": null,
   "FactorioExePath": null,
   "LaunchMode": "SteamProtocol",
-  "SteamAppId": "427520"
+  "SteamAppId": "427520",
+  "OnlyUpdateEnabledMods": false
 }
 ```
 
@@ -144,6 +145,10 @@ defaults:
   Direct-exe launching is used automatically instead of `SteamProtocol`
   whenever you pass extra arguments, since the `steam://` protocol can't
   carry them.
+- `OnlyUpdateEnabledMods`: `false` (default) checks and updates every
+  installed mod. Set to `true` to skip mods marked disabled in
+  `mod-list.json`, so only mods you actually have enabled get checked
+  against the Mod Portal.
 
 ## What it does and doesn't do
 
