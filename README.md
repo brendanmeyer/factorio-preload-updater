@@ -41,6 +41,12 @@ Forward extra arguments to Factorio itself (e.g. to join a server or load a save
 .\Update-FactorioMods.ps1 -mp-connect 1.2.3.4
 ```
 
+Skip the check for a newer version of this tool:
+
+```powershell
+.\Update-FactorioMods.ps1 -SkipSelfUpdate
+```
+
 ## Running automatically when you press Play in Steam
 
 Steam's per-game "Launch Options" support a `%command%` placeholder: whatever
@@ -122,6 +128,29 @@ first. Nothing is deleted outright, so you can restore the original by
 renaming the `.bak` back. Add `-WhatIf` to preview the changes without
 making them.
 
+## Checking for tool updates
+
+Every time `Update-FactorioMods.ps1` runs, it also checks GitHub for a newer
+release of this tool itself (this is separate from, and runs alongside, the
+Factorio mod-update pass). If a newer release is found, it shows the version
+and release notes, then asks:
+
+```
+Download and apply this update now? [y/N]
+```
+
+Answering yes downloads that release, backs up each file it's about to
+replace as `<file>.bak`, then overwrites it with the new version.
+`config.json` is never touched. Since the script is already running with its
+current code loaded, the update takes effect the next time you run it, not
+immediately. Answering no (or just pressing Enter) leaves everything as-is.
+
+This check never blocks you from launching Factorio: if GitHub can't be
+reached, it's silently skipped with a warning. `-DryRun` will show an
+available update but won't prompt to install it. Set `CheckForUpdates` to
+`false` in `config.json` to turn the check off entirely, or pass
+`-SkipSelfUpdate` to skip it for a single run.
+
 ## Configuration
 
 A `config.json` is created next to the script on first run, with these
@@ -134,7 +163,8 @@ defaults:
   "LaunchMode": "SteamProtocol",
   "SteamAppId": "427520",
   "OnlyUpdateEnabledMods": false,
-  "DownloadMissingDependencies": false
+  "DownloadMissingDependencies": false,
+  "CheckForUpdates": true
 }
 ```
 
@@ -155,6 +185,9 @@ defaults:
   mod's required dependencies if they're missing (following the chain if a
   new dependency needs its own dependencies too). Optional and incompatible
   dependencies are never auto-installed.
+- `CheckForUpdates`: `true` (default) checks GitHub for a newer release of
+  this tool on every run; see [Checking for tool
+  updates](#checking-for-tool-updates) above. Set to `false` to disable.
 
 ## What it does and doesn't do
 

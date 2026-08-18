@@ -4,5 +4,6 @@
     "LaunchMode":  "SteamProtocol",
     "SteamAppId":  "427520",
     "OnlyUpdateEnabledMods":  false,
-    "DownloadMissingDependencies":  false
+    "DownloadMissingDependencies":  false,
+    "CheckForUpdates":  true
 }

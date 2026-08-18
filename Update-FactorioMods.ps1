@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Version: 1.0.0.3
+Version: 1.0.0.4
 
 Checks installed Factorio mods against the Mod Portal, downloads any updates
 using the credentials Factorio already saved after an in-game login, then
@@ -10,6 +10,7 @@ launches Factorio (Steam or standalone).
 [CmdletBinding()]
 param(
     [switch]$SkipModUpdate,
+    [switch]$SkipSelfUpdate,
     [switch]$NoLaunch,
     [switch]$DryRun,
     [string]$ConfigPath,
@@ -21,13 +22,18 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-# Some Windows machines still default to TLS 1.0, which mods.factorio.com rejects.
+# Some Windows machines still default to TLS 1.0, which mods.factorio.com and
+# GitHub reject.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $ConfigPath) {
     $ConfigPath = Join-Path $ScriptDir 'config.json'
 }
+
+# This tool's own GitHub repo, used by the self-update check below.
+$GithubOwner = 'brendanmeyer'
+$GithubRepo = 'factorio-preload-updater'
 
 # ---------------------------------------------------------------------------
 # Config
@@ -46,6 +52,7 @@ function Get-ScriptConfig {
         SteamAppId                  = '427520'           # Factorio's Steam app id
         OnlyUpdateEnabledMods       = $false             # $false = update every installed mod (default)
         DownloadMissingDependencies = $false             # $false = don't auto-install a downloaded mod's missing dependencies
+        CheckForUpdates             = $true              # $true = check GitHub for a newer release of this tool each run
     }
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -206,6 +213,90 @@ function Get-InstalledFactorioVersion {
     if (-not (Test-Path -LiteralPath $infoPath)) { return $null }
     $info = Get-Content -LiteralPath $infoPath -Raw | ConvertFrom-Json
     return $info.version
+}
+
+# ---------------------------------------------------------------------------
+# Self-update: check GitHub for a newer release of this tool
+# ---------------------------------------------------------------------------
+
+# The running script's own version comes from its header comment - the same
+# one bumped by hand per the project's versioning convention - rather than a
+# separate variable, so there's only one place that can drift out of date.
+function Get-ScriptOwnVersion {
+    param([string]$Path)
+
+    $content = Get-Content -LiteralPath $Path -Raw
+    if ($content -match 'Version:\s*([\d.]+)') { return $Matches[1] }
+    return $null
+}
+
+function Get-LatestGithubRelease {
+    param([string]$Owner, [string]$Repo)
+
+    $url = "https://api.github.com/repos/$Owner/$Repo/releases/latest"
+    try {
+        # GitHub's API rejects requests with no User-Agent header.
+        return Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 15 -Headers @{ 'User-Agent' = 'factorio-preload-updater' }
+    } catch {
+        Write-Warning "Could not check for tool updates: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+# Releases are tagged as a plain "vX.Y.Z". Between releases this script's own
+# version may carry a 4th "dev build" component ("X.Y.Z.N") that doesn't
+# correspond to any release yet, so only the first three components are ever
+# compared against a release tag - otherwise a dev build already ahead of the
+# last release would be reported as needing that same release "again".
+function Test-NewerReleaseAvailable {
+    param([string]$CurrentVersion, [string]$ReleaseTag)
+
+    $tagVersion = $ReleaseTag.TrimStart('v')
+    $currentBase = ($CurrentVersion -split '\.')[0..2] -join '.'
+    return ([version]$tagVersion -gt [version]$currentBase)
+}
+
+# Downloads a release's auto-generated source zip and overwrites this tool's
+# own files with it. config.json is deliberately never touched - it's the
+# user's own local settings, not part of the tool's source. Each replaced
+# file is backed up to "<file>.bak" first, overwriting any previous backup -
+# unlike the shortcut/vdf scripts' "keep the original forever" backups,
+# here ".bak" means "the version right before this update", so a bad update
+# can be rolled back one step by restoring it.
+function Invoke-SelfUpdate {
+    param([string]$ScriptDir, $Release)
+
+    $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ([guid]::NewGuid())
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+    try {
+        $zipPath = Join-Path $tempDir 'release.zip'
+        Invoke-WebRequest -Uri $Release.zipball_url -OutFile $zipPath -UseBasicParsing -TimeoutSec 60 -Headers @{ 'User-Agent' = 'factorio-preload-updater' }
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $tempDir
+
+        # GitHub's zipball wraps everything in one folder named after the repo/commit.
+        $extractedRoot = Get-ChildItem -LiteralPath $tempDir -Directory | Select-Object -First 1
+        if (-not $extractedRoot) { throw 'Downloaded archive did not contain the expected folder.' }
+
+        $filesToUpdate = @(
+            'Update-FactorioMods.ps1',
+            'Set-FactorioSteamLaunchOptions.ps1',
+            'Update-FactorioShortcuts.ps1',
+            'Launch-Wrapper.bat',
+            'README.md'
+        )
+        foreach ($file in $filesToUpdate) {
+            $source = Join-Path $extractedRoot.FullName $file
+            if (-not (Test-Path -LiteralPath $source)) { continue }
+
+            $destination = Join-Path $ScriptDir $file
+            if (Test-Path -LiteralPath $destination) {
+                Copy-Item -LiteralPath $destination -Destination "$destination.bak" -Force
+            }
+            Copy-Item -LiteralPath $source -Destination $destination -Force
+        }
+    } finally {
+        Remove-Item -LiteralPath $tempDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -504,6 +595,32 @@ function Start-Factorio {
 # ---------------------------------------------------------------------------
 
 $config = Get-ScriptConfig -Path $ConfigPath
+
+if (-not $SkipSelfUpdate -and $config.CheckForUpdates) {
+    try {
+        $ownVersion = Get-ScriptOwnVersion -Path (Join-Path $ScriptDir 'Update-FactorioMods.ps1')
+        $release = Get-LatestGithubRelease -Owner $GithubOwner -Repo $GithubRepo
+        if ($release -and $ownVersion -and (Test-NewerReleaseAvailable -CurrentVersion $ownVersion -ReleaseTag $release.tag_name)) {
+            Write-Host "Update available: $($release.tag_name) (you have $ownVersion)."
+            if ($release.body) {
+                Write-Host '--- Release notes ---'
+                Write-Host (($release.body -split "`r?`n" | Select-Object -First 15) -join "`n")
+                Write-Host '----------------------'
+            }
+
+            if ($DryRun) {
+                Write-Host "(dry run: not prompting to update)"
+            } elseif ((Read-Host "Download and apply this update now? [y/N]") -match '^[Yy]') {
+                Invoke-SelfUpdate -ScriptDir $ScriptDir -Release $release
+                Write-Host "Updated to $($release.tag_name) - this takes effect the next time you run the script."
+            } else {
+                Write-Host "Skipped update."
+            }
+        }
+    } catch {
+        Write-Warning "Self-update check failed: $($_.Exception.Message)"
+    }
+}
 
 $userDataPath = Get-FactorioUserDataPath
 $modsPath = if ($config.ModsPath) { $config.ModsPath } else { Join-Path $userDataPath 'mods' }
