@@ -3,5 +3,6 @@
     "FactorioExePath":  null,
     "LaunchMode":  "SteamProtocol",
     "SteamAppId":  "427520",
-    "OnlyUpdateEnabledMods":  false
+    "OnlyUpdateEnabledMods":  false,
+    "DownloadMissingDependencies":  false
 }

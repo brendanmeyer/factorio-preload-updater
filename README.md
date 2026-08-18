@@ -133,7 +133,8 @@ defaults:
   "FactorioExePath": null,
   "LaunchMode": "SteamProtocol",
   "SteamAppId": "427520",
-  "OnlyUpdateEnabledMods": false
+  "OnlyUpdateEnabledMods": false,
+  "DownloadMissingDependencies": false
 }
 ```
 
@@ -149,6 +150,11 @@ defaults:
   installed mod. Set to `true` to skip mods marked disabled in
   `mod-list.json`, so only mods you actually have enabled get checked
   against the Mod Portal.
+- `DownloadMissingDependencies`: `false` (default) only downloads updates
+  for mods you already have. Set to `true` to also install a downloaded
+  mod's required dependencies if they're missing (following the chain if a
+  new dependency needs its own dependencies too). Optional and incompatible
+  dependencies are never auto-installed.
 
 ## What it does and doesn't do
 

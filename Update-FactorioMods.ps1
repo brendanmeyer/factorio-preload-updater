@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Version: 1.0.0.2
+Version: 1.0.0.3
 
 Checks installed Factorio mods against the Mod Portal, downloads any updates
 using the credentials Factorio already saved after an in-game login, then
@@ -40,11 +40,12 @@ function Get-ScriptConfig {
     param([string]$Path)
 
     $defaults = [ordered]@{
-        ModsPath              = $null              # null = auto-detect %APPDATA%\Factorio\mods
-        FactorioExePath       = $null              # null = auto-detect (Steam, then standalone)
-        LaunchMode            = 'SteamProtocol'    # SteamProtocol | SteamExe | Standalone
-        SteamAppId            = '427520'           # Factorio's Steam app id
-        OnlyUpdateEnabledMods = $false             # $false = update every installed mod (default)
+        ModsPath                    = $null              # null = auto-detect %APPDATA%\Factorio\mods
+        FactorioExePath             = $null              # null = auto-detect (Steam, then standalone)
+        LaunchMode                  = 'SteamProtocol'    # SteamProtocol | SteamExe | Standalone
+        SteamAppId                  = '427520'           # Factorio's Steam app id
+        OnlyUpdateEnabledMods       = $false             # $false = update every installed mod (default)
+        DownloadMissingDependencies = $false             # $false = don't auto-install a downloaded mod's missing dependencies
     }
 
     if (-not (Test-Path -LiteralPath $Path)) {
@@ -338,6 +339,44 @@ function Get-LatestReleases {
     return $latestByName
 }
 
+# A release's dependency strings look like "base >= 2.1.0", "? some-optional-mod",
+# "(?) some-hidden-optional-mod", or "! some-incompatible-mod". Only
+# unprefixed and "~" (no load-order requirement, but still required)
+# dependencies actually need to be present for the mod to work - optional
+# ("?", "(?)") and incompatible ("!") ones are left alone. Version
+# constraints aren't checked; we just install the portal's latest release,
+# same as everywhere else in this script.
+function Get-RequiredDependencyNames {
+    param([string[]]$DependencyStrings)
+
+    $required = [System.Collections.Generic.List[string]]::new()
+    foreach ($dep in $DependencyStrings) {
+        $trimmed = $dep.Trim()
+        if ($trimmed -match '^\(\?\)' -or $trimmed -match '^[?!]') { continue }
+        $trimmed = $trimmed -replace '^~\s*', ''
+        $name = ($trimmed -split '\s+')[0]
+        if ($name -and $name -ine 'base') { $required.Add($name) }
+    }
+    return $required
+}
+
+# The batch list endpoint used by Get-LatestReleases doesn't include
+# dependency info, so resolving dependencies needs one extra per-mod call to
+# the "full" endpoint, which does.
+function Get-ModDependencies {
+    param([string]$ModName, [string]$Version)
+
+    try {
+        $full = Invoke-RestMethod -Uri "https://mods.factorio.com/api/mods/$([uri]::EscapeDataString($ModName))/full" -Method Get -TimeoutSec 15
+    } catch {
+        Write-Warning "  Could not look up dependencies for '$ModName': $($_.Exception.Message)"
+        return @()
+    }
+    $release = $full.releases | Where-Object { $_.version -eq $Version } | Select-Object -First 1
+    if (-not $release -or -not $release.info_json.dependencies) { return @() }
+    return $release.info_json.dependencies
+}
+
 # Downloads one release and adds it to the mods folder - the actual work
 # done inside each parallel runspace below. The existing zip(s) for this mod
 # are deliberately left in place - Factorio keeps old versions around
@@ -531,6 +570,41 @@ if (-not $SkipModUpdate) {
             }
 
             $toUpdate.Add([PSCustomObject]@{ Name = $mod.Name; Release = $release })
+        }
+
+        if ($config.DownloadMissingDependencies -and $toUpdate.Count -gt 0) {
+            $installedNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($installedMod in $mods.Mods) { [void]$installedNames.Add($installedMod.Name) }
+            $queuedNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+            foreach ($queuedMod in $toUpdate) { [void]$queuedNames.Add($queuedMod.Name) }
+
+            # Walk the dependency graph breadth-first: a mod we just decided to
+            # add might itself need mods that aren't installed either.
+            # $queuedNames guarantees each mod name is only ever enqueued once,
+            # so a dependency cycle can't loop forever.
+            $toResolve = [System.Collections.Generic.Queue[object]]::new()
+            foreach ($queuedMod in $toUpdate) { $toResolve.Enqueue($queuedMod) }
+
+            while ($toResolve.Count -gt 0) {
+                $current = $toResolve.Dequeue()
+                $depNames = Get-RequiredDependencyNames -DependencyStrings (Get-ModDependencies -ModName $current.Name -Version $current.Release.version)
+                $missing = @($depNames | Where-Object { -not $installedNames.Contains($_) -and -not $queuedNames.Contains($_) } | Select-Object -Unique)
+                if ($missing.Count -eq 0) { continue }
+
+                $depReleases = Get-LatestReleases -ModNames $missing
+                foreach ($depName in $missing) {
+                    $release = $depReleases[$depName]
+                    if (-not $release) {
+                        Write-Warning "  Dependency '$depName' (required by '$($current.Name)') not found on the mod portal - skipping."
+                        continue
+                    }
+                    Write-Host "  Adding dependency '$depName' $($release.version) (required by '$($current.Name)')."
+                    $newItem = [PSCustomObject]@{ Name = $depName; Release = $release }
+                    $toUpdate.Add($newItem)
+                    [void]$queuedNames.Add($depName)
+                    $toResolve.Enqueue($newItem)
+                }
+            }
         }
 
         if ($toUpdate.Count -gt 0) {
