@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 <#
-Version: 1.0.0.4
+Version: 1.0.2
 
 Checks installed Factorio mods against the Mod Portal, downloads any updates
 using the credentials Factorio already saved after an in-game login, then

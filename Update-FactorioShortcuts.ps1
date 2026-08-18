@@ -1,5 +1,5 @@
 <#
-Version: 1.0.0
+Version: 1.0.2
 
 Finds Desktop, Start Menu, and taskbar shortcuts that launch factorio.exe
 directly and repoints them at Update-FactorioMods.ps1, so launching from any

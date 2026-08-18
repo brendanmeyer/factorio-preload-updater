@@ -1,5 +1,5 @@
 @echo off
-rem Version: 1.0.0
+rem Version: 1.0.2
 rem Wrapper for Steam's "Launch Options" %command% substitution.
 rem Runs the mod updater (without launching Factorio itself), then executes
 rem whatever command Steam passes in - i.e. the real factorio.exe + its args -
