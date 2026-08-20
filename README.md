@@ -63,15 +63,25 @@ To wire it up:
 1. In Steam, right-click **Factorio** → **Properties** → **General**.
 2. In **Launch Options**, enter:
    ```
-   "C:\path\to\factorio-preload-updater\Launch-Wrapper.bat" %command%
+   conhost.exe "C:\path\to\factorio-preload-updater\Launch-Wrapper.bat" %command%
    ```
    (use the actual path to where you cloned this repo).
 3. Close the dialog. Pressing **Play** now runs the mod update pass first,
    then launches Factorio as normal.
 
-A console window is shown while the update check runs. If there are no mod
-updates, this only adds about a second before the game window appears;
-actual downloads take longer, depending on mod size and connection speed.
+A console window is shown while the update check runs, so you can watch
+progress and answer the tool-update prompt if one comes up. Once the check
+is done, the wrapper hides that window (`Hide-Console.ps1`) before starting
+Factorio - it doesn't close outright, since Steam still needs the underlying
+process alive for the whole play session to track playtime and the Stop
+button correctly, but it no longer sits on screen while you're playing.
+
+The `conhost.exe` prefix forces the classic console host. It's needed
+because on modern Windows 11 the default is Windows Terminal, which hosts
+the window itself and doesn't let `Hide-Console.ps1` truly hide it - an
+external hide request just minimizes it back to the taskbar instead.
+`conhost.exe` isn't affected by that and hides properly, regardless of your
+system's default terminal app setting.
 
 **Automated option:** rather than typing the Launch Options in by hand, run:
 

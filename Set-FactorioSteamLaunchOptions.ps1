@@ -1,5 +1,5 @@
 <#
-Version: 1.0.2
+Version: 1.0.2.1
 
 Sets Factorio's Steam "Launch Options" (the %command% wrapper) directly in
 Steam's own config file, instead of typing it in by hand.
@@ -39,7 +39,11 @@ if (-not $LaunchOptions) {
         exit 1
     }
     $resolvedWrapper = (Resolve-Path -LiteralPath $wrapperPath).Path
-    $LaunchOptions = "`"$resolvedWrapper`" %command%"
+    # "conhost.exe" forces the classic console host regardless of the user's
+    # system-wide default terminal app setting - Windows Terminal hosts the
+    # window itself and doesn't let Hide-Console.ps1 truly hide it (an
+    # external hide request just minimizes it instead).
+    $LaunchOptions = "conhost.exe `"$resolvedWrapper`" %command%"
 }
 
 if (-not $SteamAppId) {
