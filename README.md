@@ -63,7 +63,7 @@ To wire it up:
 1. In Steam, right-click **Factorio** → **Properties** → **General**.
 2. In **Launch Options**, enter:
    ```
-   conhost.exe "C:\path\to\factorio-preload-updater\Launch-Wrapper.bat" %command%
+   "C:\Windows\System32\conhost.exe" "C:\path\to\factorio-preload-updater\Launch-Wrapper.bat" %command%
    ```
    (use the actual path to where you cloned this repo).
 3. Close the dialog. Pressing **Play** now runs the mod update pass first,
@@ -81,7 +81,9 @@ because on modern Windows 11 the default is Windows Terminal, which hosts
 the window itself and doesn't let `Hide-Console.ps1` truly hide it - an
 external hide request just minimizes it back to the taskbar instead.
 `conhost.exe` isn't affected by that and hides properly, regardless of your
-system's default terminal app setting.
+system's default terminal app setting. It needs the full path shown above -
+Steam doesn't search `PATH` the way `cmd.exe` would, so just `conhost.exe`
+on its own won't be found.
 
 **Automated option:** rather than typing the Launch Options in by hand, run:
 
