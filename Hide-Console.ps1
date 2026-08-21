@@ -1,5 +1,5 @@
 <#
-Version: 1.0.2.1
+Version: 1.0.3
 
 Hides the console window of whichever process calls this script - used by
 Launch-Wrapper.bat to make the console disappear once the mod update check
